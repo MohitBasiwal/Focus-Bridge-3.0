@@ -12,13 +12,18 @@ import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.screens.*
 
 @Composable
 fun FocusBridgeNavHost(
     navController: NavHostController,
-    paddingValues: PaddingValues
+    paddingValues: PaddingValues,
+    viewModel: com.example.ui.viewmodel.AppBlockerViewModel = androidx.hilt.navigation.compose.hiltViewModel()
 ) {
+    val isOnboardingCompleted by viewModel.isOnboardingCompleted.collectAsStateWithLifecycle()
+
     NavHost(
         navController = navController,
         startDestination = Screen.Splash,
@@ -60,8 +65,23 @@ fun FocusBridgeNavHost(
         ) {
             SplashScreen(
                 onNavigateToHome = {
+                    if (isOnboardingCompleted) {
+                        navController.navigate(Screen.Home) {
+                            popUpTo<Screen.Splash> { inclusive = true }
+                        }
+                    } else {
+                        navController.navigate(Screen.Onboarding) {
+                            popUpTo<Screen.Splash> { inclusive = true }
+                        }
+                    }
+                }
+            )
+        }
+        composable<Screen.Onboarding> {
+            OnboardingScreen(
+                onNavigateToHome = {
                     navController.navigate(Screen.Home) {
-                        popUpTo<Screen.Splash> { inclusive = true }
+                        popUpTo<Screen.Onboarding> { inclusive = true }
                     }
                 }
             )

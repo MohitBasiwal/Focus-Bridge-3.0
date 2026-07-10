@@ -30,8 +30,10 @@ class MainActivity : ComponentActivity() {
                 val currentBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentDestination = currentBackStackEntry?.destination
                 
-                // Show bottom bar on all screens except Splash
-                val showBottomBar = currentDestination != null && !currentDestination.hasRoute<Screen.Splash>()
+                // Show bottom bar on all screens except Splash and Onboarding
+                val showBottomBar = currentDestination != null && 
+                        !currentDestination.hasRoute<Screen.Splash>() && 
+                        !currentDestination.hasRoute<Screen.Onboarding>()
 
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),

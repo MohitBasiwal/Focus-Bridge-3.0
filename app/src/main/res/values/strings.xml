@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Focus Bridge</string>
+    <string name="accessibility_service_description">Focus Bridge uses this service to detect when you open blocked apps during your focus sessions and display a full-screen blocking overlay to help you stay on track.</string>
 </resources>

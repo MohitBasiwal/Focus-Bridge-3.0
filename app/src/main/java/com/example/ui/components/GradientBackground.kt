@@ -20,16 +20,14 @@ fun GradientBackground(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
-    val isDark = isSystemInDarkTheme()
-    
-    // Core base gradient colors
-    val baseBgStart = if (isDark) Color(0xFF07050E) else Color(0xFFF1F3F9)
-    val baseBgEnd = if (isDark) Color(0xFF14132B) else Color(0xFFE8ECF5)
+    // Core base gradient colors matching deep navy background (#090B24)
+    val baseBgStart = DeepNavyBg
+    val baseBgEnd = Color(0xFF040510) // Ultra-rich dark navy shadow
     
     // Glowing blob colors
-    val blobColor1 = if (isDark) Color(0x2906B6D4) else Color(0x184F46E5) // Cyan / Indigo
-    val blobColor2 = if (isDark) Color(0x228B5CF6) else Color(0x14E64899) // Purple / Pink
-    val blobColor3 = if (isDark) Color(0x1AEC4899) else Color(0x100EA5E9) // Rose / Sky Blue
+    val blobColor1 = BlobColorPrimary
+    val blobColor2 = BlobColorSecondary
+    val blobColor3 = BlobColorTertiary
 
     // Slow organic motion animation
     val infiniteTransition = rememberInfiniteTransition(label = "AuroraMotion")

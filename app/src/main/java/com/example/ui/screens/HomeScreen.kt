@@ -61,7 +61,11 @@ data class TimetableBlock(
 
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
-fun HomeScreen() {
+fun HomeScreen(
+    viewModel: com.example.ui.viewmodel.AppBlockerViewModel = androidx.hilt.navigation.compose.hiltViewModel()
+) {
+    val isBlockingActive by viewModel.isBlockingActive.collectAsStateWithLifecycle()
+
     // Staggered entry anim state
     var startAnimations by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
@@ -700,7 +704,7 @@ fun HomeScreen() {
                             ) {
                                 for (j in 0..1) {
                                     val action = quickActions[i + j]
-                                    val isActive = activeQuickActions[action.id] == true
+                                    val isActive = if (action.id == "strict") isBlockingActive else (activeQuickActions[action.id] == true)
 
                                     // Animated border & glow scaling
                                     val scale by animateFloatAsState(
@@ -733,7 +737,11 @@ fun HomeScreen() {
                                                 .fillMaxWidth()
                                                 .clickable {
                                                     haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                                                    activeQuickActions[action.id] = !isActive
+                                                    if (action.id == "strict") {
+                                                        viewModel.setBlockingActive(!isBlockingActive)
+                                                    } else {
+                                                        activeQuickActions[action.id] = !isActive
+                                                    }
                                                 },
                                             cornerRadius = 20.dp,
                                             elevation = if (isActive) 12.dp else 4.dp

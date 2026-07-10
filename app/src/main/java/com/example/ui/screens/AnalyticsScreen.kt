@@ -60,13 +60,13 @@ fun AnalyticsScreen() {
     }
     var selectedDayIndex by remember { mutableIntStateOf(3) } // Default Thursday active
 
-    // 4. Category statistics
+    // 4. Category statistics mapped to the futuristic violet-lavender aesthetic
     val categories = remember {
         listOf(
-            CategoryStat("Coding", 0.45f, Color(0xFF06B6D4), Icons.Default.Code),
-            CategoryStat("Study", 0.30f, Color(0xFF8B5CF6), Icons.Default.MenuBook),
-            CategoryStat("Health", 0.15f, Color(0xFF10B981), Icons.Default.Favorite),
-            CategoryStat("Admin", 0.10f, Color(0xFFF59E0B), Icons.Default.Work)
+            CategoryStat("Coding", 0.45f, Color(0xFF8B7BFF), Icons.Default.Code), // Soft Violet Accent
+            CategoryStat("Study", 0.30f, Color(0xFFD6CFFF), Icons.Default.MenuBook), // Lavender Highlight
+            CategoryStat("Health", 0.15f, Color(0xFFB5A9FF), Icons.Default.Favorite), // Light Slate Violet
+            CategoryStat("Admin", 0.10f, Color(0xFF5140CD), Icons.Default.Work) // Dark royal indigo glass complement
         )
     }
 

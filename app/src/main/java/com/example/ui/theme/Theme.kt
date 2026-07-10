@@ -15,40 +15,33 @@ private val DarkColorScheme = darkColorScheme(
     primary = PrimaryDark,
     secondary = SecondaryDark,
     tertiary = TertiaryDark,
-    background = DarkBackgroundStart,
-    surface = GlassWhite10,
-    onPrimary = Color.Black,
+    background = DeepNavyBg,
+    surface = IndigoGlass,
+    onPrimary = Color.White,
     onSecondary = Color.White,
-    onBackground = Color.White,
-    onSurface = Color.White
+    onBackground = TextPrimaryWhite,
+    onSurface = TextPrimaryWhite
 )
 
 private val LightColorScheme = lightColorScheme(
     primary = PrimaryLight,
     secondary = SecondaryLight,
     tertiary = TertiaryLight,
-    background = LightBackgroundStart,
-    surface = GlassWhite70,
+    background = DeepNavyBg, // Force Deep Navy Background even in light mode for cohesive premium design
+    surface = IndigoGlass,
     onPrimary = Color.White,
     onSecondary = Color.White,
-    onBackground = Color(0xFF0F172A),
-    onSurface = Color(0xFF0F172A)
+    onBackground = TextPrimaryWhite,
+    onSurface = TextPrimaryWhite
 )
 
 @Composable
 fun FocusBridgeTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = true,
+    darkTheme: Boolean = true, // Default to true for futuristic sci-fi vibe
+    dynamicColor: Boolean = false, // Set to false by default so our theme is preserved
     content: @Composable () -> Unit
 ) {
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
-    }
+    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
 
     MaterialTheme(
         colorScheme = colorScheme,

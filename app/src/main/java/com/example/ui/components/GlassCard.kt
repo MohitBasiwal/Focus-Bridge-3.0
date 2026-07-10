@@ -3,7 +3,6 @@ package com.example.ui.components
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.padding
@@ -22,54 +21,30 @@ import com.example.ui.theme.*
 @Composable
 fun GlassCard(
     modifier: Modifier = Modifier,
-    cornerRadius: Dp = 28.dp, // Premium 28dp radius default
+    cornerRadius: Dp = 24.dp, // Cozy M3-friendly corner radius
     borderWidth: Dp = 1.2.dp,
-    elevation: Dp = 8.dp,
+    elevation: Dp = 12.dp, // Higher elevation for premium layered shadow depth
     content: @Composable BoxScope.() -> Unit
 ) {
-    val isDark = isSystemInDarkTheme()
+    // Premium frosted indigo glass diagonal reflection gradient
+    val backgroundBrush = Brush.linearGradient(
+        colors = listOf(
+            Color(0x361F2459), // Brighter top-left glass overlay (approx 21% opacity)
+            Color(0x1E121535)  // Rich indigo glass body (approx 12% opacity)
+        ),
+        start = Offset(0f, 0f),
+        end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
+    )
     
-    // Premium frosted glass diagonal light reflection gradient
-    val backgroundBrush = if (isDark) {
-        Brush.linearGradient(
-            colors = listOf(
-                Color(0x1CFFFFFF), // ~11% White
-                Color(0x06FFFFFF)  // ~2.5% White
-            ),
-            start = Offset(0f, 0f),
-            end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
-        )
-    } else {
-        Brush.linearGradient(
-            colors = listOf(
-                Color(0xCCFFFFFF), // ~80% White
-                Color(0x73FFFFFF)  // ~45% White
-            ),
-            start = Offset(0f, 0f),
-            end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
-        )
-    }
-    
-    // Diagonal border brush to capture bright reflection highlights on edges
-    val borderBrush = if (isDark) {
-        Brush.linearGradient(
-            colors = listOf(
-                Color(0x3DFFFFFF), // ~24% White (Highlights top-left)
-                Color(0x0AFFFFFF)  // ~4% White (Fades bottom-right)
-            ),
-            start = Offset(0f, 0f),
-            end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
-        )
-    } else {
-        Brush.linearGradient(
-            colors = listOf(
-                Color(0x8CFFFFFF), // ~55% White (Light specular highlight)
-                Color(0x24000000)  // ~14% Black (Shadow outline)
-            ),
-            start = Offset(0f, 0f),
-            end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
-        )
-    }
+    // Diagonal border brush with soft violet-to-lavender highlights
+    val borderBrush = Brush.linearGradient(
+        colors = listOf(
+            Color(0x668B7BFF), // Top-left high specularity soft violet highlight (40% opacity)
+            Color(0x12D6CFFF)  // Bottom-right lavender fade (7% opacity)
+        ),
+        start = Offset(0f, 0f),
+        end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
+    )
 
     val shape = RoundedCornerShape(cornerRadius)
 
@@ -79,15 +54,15 @@ fun GlassCard(
                 elevation = elevation,
                 shape = shape,
                 clip = false,
-                ambientColor = Color.Black.copy(alpha = if (isDark) 0.15f else 0.05f),
-                spotColor = Color.Black.copy(alpha = if (isDark) 0.25f else 0.08f)
+                ambientColor = Color(0xFF090B24).copy(alpha = 0.5f),
+                spotColor = SoftVioletAccent.copy(alpha = 0.25f) // Gorgeous futuristic neon ambient glow shadow
             )
             .clip(shape)
             .background(backgroundBrush)
             .border(BorderStroke(borderWidth, borderBrush), shape)
     ) {
         Box(
-            modifier = Modifier.padding(18.dp), // Premium slightly larger padding for spaciousness
+            modifier = Modifier.padding(18.dp),
             content = content
         )
     }

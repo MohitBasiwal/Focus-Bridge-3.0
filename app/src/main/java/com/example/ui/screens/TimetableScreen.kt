@@ -82,13 +82,13 @@ fun TimetableScreen(
 
     val subjectColors = remember {
         listOf(
-            Color(0xFF06B6D4), // Cyan
-            Color(0xFF8B5CF6), // Purple
-            Color(0xFFEF4444), // Red
-            Color(0xFF10B981), // Green
-            Color(0xFFF59E0B), // Orange
-            Color(0xFF3B82F6), // Blue
-            Color(0xFFEC4899)  // Rose
+            Color(0xFF8B7BFF), // Soft Violet Accent
+            Color(0xFFD6CFFF), // Lavender Highlight
+            Color(0xFFB5A9FF), // Light Slate Violet
+            Color(0xFF5140CD), // Deep Royal Indigo
+            Color(0xFF80F0FF), // Ice Cyan Glow
+            Color(0xFFFF9EE2), // Nebula Rose
+            Color(0xFF7B98FF)  // Cosmic Slate Blue
         )
     }
     var selectedColor by remember { mutableStateOf(subjectColors[0]) }
