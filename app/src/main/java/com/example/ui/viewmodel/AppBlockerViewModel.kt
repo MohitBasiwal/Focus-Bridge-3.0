@@ -26,8 +26,56 @@ class AppBlockerViewModel @Inject constructor(
     private val repository: BlockedAppRepository,
     private val websiteRepository: com.example.domain.repository.BlockedWebsiteRepository,
     private val preferenceManager: com.example.data.datastore.PreferenceManager,
-    private val unlockRepository: com.example.domain.repository.EmergencyUnlockRepository
+    private val unlockRepository: com.example.domain.repository.EmergencyUnlockRepository,
+    private val timetableRepository: com.example.domain.repository.TimetableRepository
 ) : ViewModel() {
+
+    val isAnyBlockActive: StateFlow<Boolean> = flow {
+        while (true) {
+            val isManual = isBlockingActive.value
+            val isSession = com.example.service.FocusSessionService.isRunning.value
+            
+            val calendar = java.util.Calendar.getInstance()
+            val dayOfWeekInt = calendar.get(java.util.Calendar.DAY_OF_WEEK)
+            val currentDayStr = when (dayOfWeekInt) {
+                java.util.Calendar.MONDAY -> "Mon"
+                java.util.Calendar.TUESDAY -> "Tue"
+                java.util.Calendar.WEDNESDAY -> "Wed"
+                java.util.Calendar.THURSDAY -> "Thu"
+                java.util.Calendar.FRIDAY -> "Fri"
+                java.util.Calendar.SATURDAY -> "Sat"
+                java.util.Calendar.SUNDAY -> "Sun"
+                else -> ""
+            }
+            val hour = calendar.get(java.util.Calendar.HOUR_OF_DAY)
+            val minute = calendar.get(java.util.Calendar.MINUTE)
+            val currentTimeVal = hour * 60 + minute
+
+            var isSchedule = false
+            try {
+                val subjects = timetableRepository.getAllSubjectsSync()
+                isSchedule = subjects.any { s ->
+                    val sDays = s.dayOfWeek.split(",")
+                    if (sDays.contains(currentDayStr)) {
+                        val sParts = s.startTime.split(":")
+                        val sTime = sParts[0].toInt() * 60 + sParts[1].toInt()
+                        val eParts = s.endTime.split(":")
+                        val eTime = eParts[0].toInt() * 60 + eParts[1].toInt()
+                        currentTimeVal in sTime..eTime
+                    } else false
+                }
+            } catch (e: Exception) {
+                // ignore
+            }
+
+            emit(isManual || isSession || isSchedule)
+            kotlinx.coroutines.delay(1000)
+        }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = false
+    )
 
     val blockedWebsites: StateFlow<List<com.example.data.entity.BlockedWebsiteEntity>> = websiteRepository.getAllBlockedWebsites()
         .stateIn(
@@ -52,6 +100,19 @@ class AppBlockerViewModel @Inject constructor(
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = false
         )
+
+    val isStrictBlockingEnabled: StateFlow<Boolean> = preferenceManager.isStrictBlockingEnabled
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = false
+        )
+
+    fun setStrictBlockingEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            preferenceManager.setStrictBlockingEnabled(enabled)
+        }
+    }
 
     fun setOnboardingCompleted(completed: Boolean) {
         viewModelScope.launch {

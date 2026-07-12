@@ -58,7 +58,11 @@ fun SettingsScreen(
     var showAppPickerDialog by remember { mutableStateOf(false) }
 
     // 1. Interactive States
-    var strictModeEnabled by remember { mutableStateOf(true) }
+    val strictModeEnabled by viewModel.isStrictBlockingEnabled.collectAsStateWithLifecycle()
+    val isAnyBlockActive by viewModel.isAnyBlockActive.collectAsStateWithLifecycle()
+    var showStrictEnableDialog by remember { mutableStateOf(false) }
+    var showStrictBlockedWarningDialog by remember { mutableStateOf(false) }
+
     var breakRemindersEnabled by remember { mutableStateOf(false) }
     var autoPauseThresholdMinutes by remember { mutableFloatStateOf(10f) }
 
@@ -157,7 +161,17 @@ fun SettingsScreen(
                                     }
                                     Switch(
                                         checked = strictModeEnabled,
-                                        onCheckedChange = { strictModeEnabled = it },
+                                        onCheckedChange = { checked ->
+                                            if (checked) {
+                                                showStrictEnableDialog = true
+                                            } else {
+                                                if (isAnyBlockActive) {
+                                                    showStrictBlockedWarningDialog = true
+                                                } else {
+                                                    viewModel.setStrictBlockingEnabled(false)
+                                                }
+                                            }
+                                        },
                                         colors = SwitchDefaults.colors(
                                             checkedThumbColor = MaterialTheme.colorScheme.primary,
                                             checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
@@ -1035,6 +1049,40 @@ fun SettingsScreen(
                         }
                     }
                 }
+            }
+
+            if (showStrictEnableDialog) {
+                AlertDialog(
+                    onDismissRequest = { showStrictEnableDialog = false },
+                    title = { Text("Enable Strict Blocking?", color = com.example.ui.theme.TextPrimaryWhite) },
+                    text = { Text("Once enabled, you CANNOT use Emergency Unlock during active blocks (schedules or focus sessions). This setting is locked until all active blocks end. Do you want to proceed?", color = com.example.ui.theme.TextSecondaryGray) },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            viewModel.setStrictBlockingEnabled(true)
+                            showStrictEnableDialog = false
+                        }) {
+                            Text("Enable", color = com.example.ui.theme.SoftVioletAccent)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showStrictEnableDialog = false }) {
+                            Text("Cancel", color = com.example.ui.theme.TextSecondaryGray)
+                        }
+                    }
+                )
+            }
+
+            if (showStrictBlockedWarningDialog) {
+                AlertDialog(
+                    onDismissRequest = { showStrictBlockedWarningDialog = false },
+                    title = { Text("Strict Mode Locked", color = com.example.ui.theme.TextPrimaryWhite) },
+                    text = { Text("An active focus session, schedule, or manual block is currently running. Under Strict Blocking, you cannot disable this mode until the active block finishes.", color = com.example.ui.theme.TextSecondaryGray) },
+                    confirmButton = {
+                        TextButton(onClick = { showStrictBlockedWarningDialog = false }) {
+                            Text("OK", color = com.example.ui.theme.SoftVioletAccent)
+                        }
+                    }
+                )
             }
         }
     }

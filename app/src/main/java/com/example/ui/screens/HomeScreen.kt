@@ -65,6 +65,10 @@ fun HomeScreen(
     viewModel: com.example.ui.viewmodel.AppBlockerViewModel = androidx.hilt.navigation.compose.hiltViewModel()
 ) {
     val isBlockingActive by viewModel.isBlockingActive.collectAsStateWithLifecycle()
+    val isAnyBlockActive by viewModel.isAnyBlockActive.collectAsStateWithLifecycle()
+
+    var showCannotDisableDialog by remember { mutableStateOf(false) }
+    var showFocusLockedDialog by remember { mutableStateOf(false) }
 
     // Staggered entry anim state
     var startAnimations by remember { mutableStateOf(false) }
@@ -484,7 +488,7 @@ fun HomeScreen(
                                     .clickable {
                                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                                         if (isServiceRunning) {
-                                            showStopConfirmationDialog = true
+                                            showFocusLockedDialog = true
                                         } else {
                                             selectedDurationMinutes = 25
                                         }
@@ -514,11 +518,7 @@ fun HomeScreen(
                                     .clickable {
                                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                                         if (isServiceRunning) {
-                                            if (isServicePaused) {
-                                                com.example.service.FocusSessionService.resumeSession(context)
-                                            } else {
-                                                com.example.service.FocusSessionService.pauseSession(context)
-                                            }
+                                            showFocusLockedDialog = true
                                         } else {
                                             // Start Session
                                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -738,7 +738,11 @@ fun HomeScreen(
                                                 .clickable {
                                                     haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                                                     if (action.id == "strict") {
-                                                        viewModel.setBlockingActive(!isBlockingActive)
+                                                        if (isBlockingActive) {
+                                                            showCannotDisableDialog = true
+                                                        } else {
+                                                            viewModel.setBlockingActive(true)
+                                                        }
                                                     } else {
                                                         activeQuickActions[action.id] = !isActive
                                                     }
@@ -1246,6 +1250,32 @@ fun HomeScreen(
                     }
                 }
             }
+        }
+
+        if (showCannotDisableDialog) {
+            AlertDialog(
+                onDismissRequest = { showCannotDisableDialog = false },
+                title = { Text("Blocking is Locked", color = Color.White) },
+                text = { Text("There is no instant unblock button. Active blocks (schedules, focus sessions, or manual blocks) cannot be disabled directly with a single click. The only way to bypass an active block is through the Emergency Unlock speech challenge.", color = Color.White.copy(alpha = 0.7f)) },
+                confirmButton = {
+                    TextButton(onClick = { showCannotDisableDialog = false }) {
+                        Text("OK", color = Color(0xFF8B5CF6))
+                    }
+                }
+            )
+        }
+
+        if (showFocusLockedDialog) {
+            AlertDialog(
+                onDismissRequest = { showFocusLockedDialog = false },
+                title = { Text("Focus Timer Locked", color = Color.White) },
+                text = { Text("Focus sessions cannot be paused or stopped once started. This ensures complete freedom from distraction. Let's stay focused and finish this session!", color = Color.White.copy(alpha = 0.7f)) },
+                confirmButton = {
+                    TextButton(onClick = { showFocusLockedDialog = false }) {
+                        Text("Stay Focused", color = Color(0xFF8B5CF6))
+                    }
+                }
+            )
         }
 
     }

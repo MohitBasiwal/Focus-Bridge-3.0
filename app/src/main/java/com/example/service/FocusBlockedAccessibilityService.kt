@@ -47,9 +47,14 @@ class FocusBlockedAccessibilityService : AccessibilityService() {
         }
     }
 
+    private var monitorJob: kotlinx.coroutines.Job? = null
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
-        
+        checkAndApplyBlocking(event)
+    }
+
+    private fun checkAndApplyBlocking(event: AccessibilityEvent?) {
         serviceScope.launch {
             if (isEmergencyBypassActive()) {
                 return@launch
@@ -103,65 +108,65 @@ class FocusBlockedAccessibilityService : AccessibilityService() {
                     activeSubject.blockedWebsites.split(",").toSet()
                 } else emptySet()
 
-                // 1. App Blocking
-                if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-                    val packageName = event.packageName?.toString()
-                    if (packageName != null && packageName != this@FocusBlockedAccessibilityService.packageName) {
-                        var shouldBlock = false
-                        if (isScheduleActive) {
-                            if (blockAppsSet.isNotEmpty()) {
-                                // Specific list defined for active timetable block
-                                if (blockAppsSet.contains(packageName)) {
-                                    shouldBlock = true
-                                }
-                            } else {
-                                // If active timetable block has NO specific list, block global list
-                                if (blockedAppRepository.isAppBlocked(packageName)) {
-                                    shouldBlock = true
-                                }
-                            }
-                        } else if (isManualBlockingActive) {
-                            // Block global list
-                            if (blockedAppRepository.isAppBlocked(packageName)) {
-                                    shouldBlock = true
-                            }
-                        }
+                // Get current foreground package using rootInActiveWindow if event is null
+                val packageName = event?.packageName?.toString() ?: rootInActiveWindow?.packageName?.toString()
 
-                        if (shouldBlock) {
-                            launchBlockOverlay(packageName)
-                            return@launch
+                // 1. App Blocking
+                if (packageName != null && packageName != this@FocusBlockedAccessibilityService.packageName) {
+                    var shouldBlock = false
+                    if (isScheduleActive) {
+                        if (blockAppsSet.isNotEmpty()) {
+                            // Specific list defined for active timetable block
+                            if (blockAppsSet.contains(packageName)) {
+                                shouldBlock = true
+                            }
+                        } else {
+                            // If active timetable block has NO specific list, block global list
+                            if (blockedAppRepository.isAppBlocked(packageName)) {
+                                shouldBlock = true
+                            }
                         }
+                    } else if (isManualBlockingActive) {
+                        // Block global list
+                        if (blockedAppRepository.isAppBlocked(packageName)) {
+                                shouldBlock = true
+                        }
+                    }
+
+                    if (shouldBlock) {
+                        if (!com.example.ui.screens.BlockedOverlayActivity.isShowing) {
+                            launchBlockOverlay(packageName)
+                        }
+                        return@launch
                     }
                 }
 
                 // 2. Website Blocking
-                if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED || 
-                    event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
-                    
-                    val rootNode = rootInActiveWindow
-                    val detectedDomain = findUrlInNode(rootNode)
-                    if (detectedDomain != null) {
-                        var shouldBlockWeb = false
-                        if (isScheduleActive) {
-                            if (blockWebsitesSet.isNotEmpty()) {
-                                // Specific websites defined for active timetable block
-                                if (blockWebsitesSet.contains(detectedDomain)) {
-                                    shouldBlockWeb = true
-                                }
-                            } else {
-                                // If active timetable block has NO specific list, block global list
-                                if (blockedWebsiteRepository.isWebsiteBlocked(detectedDomain)) {
-                                    shouldBlockWeb = true
-                                }
+                val rootNode = rootInActiveWindow
+                val detectedDomain = findUrlInNode(rootNode)
+                if (detectedDomain != null) {
+                    var shouldBlockWeb = false
+                    if (isScheduleActive) {
+                        if (blockWebsitesSet.isNotEmpty()) {
+                            // Specific websites defined for active timetable block
+                            if (blockWebsitesSet.contains(detectedDomain)) {
+                                shouldBlockWeb = true
                             }
-                        } else if (isManualBlockingActive) {
-                            // Block global list
+                        } else {
+                            // If active timetable block has NO specific list, block global list
                             if (blockedWebsiteRepository.isWebsiteBlocked(detectedDomain)) {
                                 shouldBlockWeb = true
                             }
                         }
+                    } else if (isManualBlockingActive) {
+                        // Block global list
+                        if (blockedWebsiteRepository.isWebsiteBlocked(detectedDomain)) {
+                            shouldBlockWeb = true
+                        }
+                    }
 
-                        if (shouldBlockWeb) {
+                    if (shouldBlockWeb) {
+                        if (!com.example.ui.screens.BlockedOverlayActivity.isShowing) {
                             launchWebsiteBlockOverlay(detectedDomain)
                         }
                     }
@@ -276,10 +281,23 @@ class FocusBlockedAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         _isServiceConnected.value = true
         Log.d("AccessibilityService", "FocusBlockedAccessibilityService Connected")
+
+        monitorJob?.cancel()
+        monitorJob = serviceScope.launch {
+            while (true) {
+                try {
+                    checkAndApplyBlocking(null)
+                } catch (e: Exception) {
+                    Log.e("AccessibilityService", "Error in periodic monitor", e)
+                }
+                kotlinx.coroutines.delay(1000)
+            }
+        }
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        monitorJob?.cancel()
         _isServiceConnected.value = false
         Log.d("AccessibilityService", "FocusBlockedAccessibilityService Destroyed")
     }

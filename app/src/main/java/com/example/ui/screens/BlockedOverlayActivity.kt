@@ -67,6 +67,20 @@ class BlockedOverlayActivity : ComponentActivity() {
     @Inject
     lateinit var blockedEventRepository: com.example.domain.repository.BlockedEventRepository
 
+    override fun onResume() {
+        super.onResume()
+        isShowing = true
+    }
+
+    override fun onPause() {
+        super.onPause()
+        isShowing = false
+    }
+
+    companion object {
+        var isShowing = false
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -127,6 +141,7 @@ class BlockedOverlayActivity : ComponentActivity() {
                 }
                 
                 val cooldownMinutes by preferenceManager.cooldownMinutes.collectAsState(initial = 30)
+                val isStrictEnabled by preferenceManager.isStrictBlockingEnabled.collectAsState(initial = false)
 
                 BlockedOverlayContent(
                     blockedAppName = displayName,
@@ -139,6 +154,7 @@ class BlockedOverlayActivity : ComponentActivity() {
                     },
                     remainingUnlocks = remainingUnlocks,
                     cooldownMinutes = cooldownMinutes,
+                    isStrictEnabled = isStrictEnabled,
                     onUnlockSuccess = {
                         scope.launch {
                             // Log the success in Room Database
@@ -195,6 +211,7 @@ fun BlockedOverlayContent(
     onReturnToFocus: () -> Unit,
     remainingUnlocks: Int,
     cooldownMinutes: Int,
+    isStrictEnabled: Boolean,
     onUnlockSuccess: () -> Unit,
     onChallengeSuccess: (Double, String) -> Unit,
     onChallengeFail: (Double, String) -> Unit
@@ -351,26 +368,30 @@ fun BlockedOverlayContent(
                         Spacer(modifier = Modifier.height(16.dp))
 
                         // Emergency Unlock Button (Purple-Themed transparent glass)
+                        val canUnlock = remainingUnlocks > 0 && !isStrictEnabled
+
                         OutlinedButton(
                             onClick = { showConfirmDialog = true },
-                            border = BorderStroke(1.2.dp, if (remainingUnlocks > 0) Color(0xFFEF4444).copy(alpha = 0.5f) else Color.Gray.copy(alpha = 0.3f)),
+                            border = BorderStroke(1.2.dp, if (canUnlock) Color(0xFFEF4444).copy(alpha = 0.5f) else Color.Gray.copy(alpha = 0.3f)),
                             colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = if (remainingUnlocks > 0) Color(0xFFEF4444) else Color.Gray
+                                contentColor = if (canUnlock) Color(0xFFEF4444) else Color.Gray
                             ),
                             shape = RoundedCornerShape(28.dp),
-                            enabled = remainingUnlocks > 0,
+                            enabled = canUnlock,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(48.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.LockOpen,
+                                imageVector = if (isStrictEnabled) Icons.Default.Lock else Icons.Default.LockOpen,
                                 contentDescription = "Unlock icon",
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = if (remainingUnlocks > 0) {
+                                text = if (isStrictEnabled) {
+                                    "Unlock Disabled (Strict Mode)"
+                                } else if (remainingUnlocks > 0) {
                                     "Emergency Unlock ($remainingUnlocks/3 left)"
                                 } else {
                                     "No Unlocks Remaining Today"
@@ -540,6 +561,7 @@ fun SpeechChallengeContent(
             addAll(List(words.size) { WordStatus.PENDING })
         }
     }
+    var mistakesCount by remember { mutableIntStateOf(0) }
     var statusMessage by remember { mutableStateOf("Tap the microphone to begin") }
     var lastSpeechTimestamp by remember { mutableStateOf(System.currentTimeMillis()) }
     var isSilentFailed by remember { mutableStateOf(false) }
@@ -550,10 +572,9 @@ fun SpeechChallengeContent(
 
     // Speech challenge progress computations
     val correctCount = wordStatuses.count { it == WordStatus.CORRECT }
-    val skippedCount = wordStatuses.count { it == WordStatus.SKIPPED }
     val progressPercent = if (words.isNotEmpty()) (currentWordIndex.toFloat() / words.size) else 0f
-    val accuracy = remember(correctCount, skippedCount) {
-        val totalProcessed = correctCount + skippedCount
+    val accuracy = remember(correctCount, mistakesCount) {
+        val totalProcessed = correctCount + mistakesCount
         if (totalProcessed == 0) 100.0 else (correctCount.toDouble() / totalProcessed) * 100.0
     }
 
@@ -562,42 +583,78 @@ fun SpeechChallengeContent(
 
     fun cleanWord(w: String) = w.lowercase().replace(Regex("[^a-z0-9]"), "")
 
+    fun levenshteinDistance(lhs: CharSequence, rhs: CharSequence): Int {
+        val lhsLength = lhs.length
+        val rhsLength = rhs.length
+
+        var distance = IntArray(lhsLength + 1) { it }
+        var newDistance = IntArray(lhsLength + 1)
+
+        for (i in 1..rhsLength) {
+            newDistance[0] = i
+            for (j in 1..lhsLength) {
+                val substitutionCost = if (lhs[j - 1] == rhs[i - 1]) 0 else 1
+                newDistance[j] = minOf(
+                    distance[j] + 1,
+                    newDistance[j - 1] + 1,
+                    distance[j - 1] + substitutionCost
+                )
+            }
+            val temp = distance
+            distance = newDistance
+            newDistance = temp
+        }
+        return distance[lhsLength]
+    }
+
+    fun isPronunciationSimilar(w1: String, w2: String): Boolean {
+        if (w1 == w2) return true
+        if (w1.isEmpty() || w2.isEmpty()) return false
+        if (w1.contains(w2) && w1.length - w2.length <= 2) return true
+        if (w2.contains(w1) && w2.length - w1.length <= 2) return true
+        
+        val dist = levenshteinDistance(w1, w2)
+        val maxLen = maxOf(w1.length, w2.length)
+        if (maxLen <= 3) return dist <= 1
+        if (maxLen <= 6) return dist <= 2
+        return dist <= 3
+    }
+
     val checkSpeechMatch = { spokenText: String ->
         lastSpeechTimestamp = System.currentTimeMillis()
-        val spokenWords = spokenText.lowercase().split(Regex("\\s+")).filter { it.isNotBlank() }
+        val targetCleanWords = words.map { cleanWord(it) }
+        val spokenWords = spokenText.lowercase().split(Regex("\\s+")).filter { it.isNotBlank() }.map { cleanWord(it) }
         
-        var tempIndex = currentWordIndex
-        var madeProgress = false
+        var targetIdx = 0
+        var correct = 0
+        var mistakes = 0
+        
+        // Reset statuses first to compute from spokenText
+        for (i in 0 until words.size) {
+            wordStatuses[i] = WordStatus.PENDING
+        }
         
         for (spokenWord in spokenWords) {
-            val cleanSpoken = cleanWord(spokenWord)
-            if (cleanSpoken.isEmpty()) continue
-            
-            // Look ahead window of up to 8 words to match conversational skips
-            var foundMatch = false
-            for (lookAhead in 0..8) {
-                val checkIdx = tempIndex + lookAhead
-                if (checkIdx < words.size) {
-                    val cleanTarget = cleanWord(words[checkIdx])
-                    if (cleanSpoken == cleanTarget || cleanTarget.contains(cleanSpoken) || cleanSpoken.contains(cleanTarget)) {
-                        // Mark skipped items
-                        for (skipIdx in tempIndex until checkIdx) {
-                            wordStatuses[skipIdx] = WordStatus.SKIPPED
-                        }
-                        wordStatuses[checkIdx] = WordStatus.CORRECT
-                        tempIndex = checkIdx + 1
-                        foundMatch = true
-                        madeProgress = true
-                        break
-                    }
+            if (spokenWord.isEmpty()) continue
+            if (targetIdx < targetCleanWords.size) {
+                val targetWord = targetCleanWords[targetIdx]
+                if (isPronunciationSimilar(spokenWord, targetWord)) {
+                    wordStatuses[targetIdx] = WordStatus.CORRECT
+                    targetIdx++
+                    correct++
+                } else {
+                    mistakes++
                 }
-            }
-            if (foundMatch) {
-                currentWordIndex = tempIndex
+            } else {
+                mistakes++
             }
         }
-
-        if (madeProgress) {
+        
+        val oldIndex = currentWordIndex
+        currentWordIndex = targetIdx
+        mistakesCount = mistakes
+        
+        if (currentWordIndex > oldIndex) {
             recognizedTextHistory = spokenText
             statusMessage = "Excellent, keep reading!"
         }
