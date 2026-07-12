@@ -28,6 +28,9 @@ class FocusBlockedAccessibilityService : AccessibilityService() {
     @Inject
     lateinit var preferenceManager: com.example.data.datastore.PreferenceManager
 
+    @Inject
+    lateinit var timetableRepository: com.example.domain.repository.TimetableRepository
+
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private suspend fun isEmergencyBypassActive(): Boolean {
@@ -47,18 +50,84 @@ class FocusBlockedAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
         
-        if (isBlockingActive.value) {
-            serviceScope.launch {
-                if (isEmergencyBypassActive()) {
-                    return@launch
+        serviceScope.launch {
+            if (isEmergencyBypassActive()) {
+                return@launch
+            }
+
+            // 1. Check if there is an active timetable schedule right now
+            val calendar = java.util.Calendar.getInstance()
+            val dayOfWeekInt = calendar.get(java.util.Calendar.DAY_OF_WEEK)
+            val currentDayStr = when (dayOfWeekInt) {
+                java.util.Calendar.MONDAY -> "Mon"
+                java.util.Calendar.TUESDAY -> "Tue"
+                java.util.Calendar.WEDNESDAY -> "Wed"
+                java.util.Calendar.THURSDAY -> "Thu"
+                java.util.Calendar.FRIDAY -> "Fri"
+                java.util.Calendar.SATURDAY -> "Sat"
+                java.util.Calendar.SUNDAY -> "Sun"
+                else -> ""
+            }
+            val hour = calendar.get(java.util.Calendar.HOUR_OF_DAY)
+            val minute = calendar.get(java.util.Calendar.MINUTE)
+            val currentTimeVal = hour * 60 + minute
+
+            var activeSubject: com.example.data.entity.TimetableSubjectEntity? = null
+            try {
+                val subjects = timetableRepository.getAllSubjectsSync()
+                activeSubject = subjects.find { s ->
+                    val sDays = s.dayOfWeek.split(",")
+                    if (sDays.contains(currentDayStr)) {
+                        val sParts = s.startTime.split(":")
+                        val sTime = sParts[0].toInt() * 60 + sParts[1].toInt()
+                        val eParts = s.endTime.split(":")
+                        val eTime = eParts[0].toInt() * 60 + eParts[1].toInt()
+                        currentTimeVal in sTime..eTime
+                    } else false
                 }
-                
+            } catch (e: Exception) {
+                Log.e("AccessibilityService", "Error resolving active timetable subject", e)
+            }
+
+            // If a schedule is active, or manual blocking is active
+            val isScheduleActive = activeSubject != null
+            val isManualBlockingActive = isBlockingActive.value
+
+            if (isScheduleActive || isManualBlockingActive) {
+                // Determine block criteria
+                val blockAppsSet = if (isScheduleActive && activeSubject?.blockedApps?.isNotBlank() == true) {
+                    activeSubject.blockedApps.split(",").toSet()
+                } else emptySet()
+
+                val blockWebsitesSet = if (isScheduleActive && activeSubject?.blockedWebsites?.isNotBlank() == true) {
+                    activeSubject.blockedWebsites.split(",").toSet()
+                } else emptySet()
+
                 // 1. App Blocking
                 if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
                     val packageName = event.packageName?.toString()
                     if (packageName != null && packageName != this@FocusBlockedAccessibilityService.packageName) {
-                        val isBlocked = blockedAppRepository.isAppBlocked(packageName)
-                        if (isBlocked) {
+                        var shouldBlock = false
+                        if (isScheduleActive) {
+                            if (blockAppsSet.isNotEmpty()) {
+                                // Specific list defined for active timetable block
+                                if (blockAppsSet.contains(packageName)) {
+                                    shouldBlock = true
+                                }
+                            } else {
+                                // If active timetable block has NO specific list, block global list
+                                if (blockedAppRepository.isAppBlocked(packageName)) {
+                                    shouldBlock = true
+                                }
+                            }
+                        } else if (isManualBlockingActive) {
+                            // Block global list
+                            if (blockedAppRepository.isAppBlocked(packageName)) {
+                                    shouldBlock = true
+                            }
+                        }
+
+                        if (shouldBlock) {
                             launchBlockOverlay(packageName)
                             return@launch
                         }
@@ -72,8 +141,27 @@ class FocusBlockedAccessibilityService : AccessibilityService() {
                     val rootNode = rootInActiveWindow
                     val detectedDomain = findUrlInNode(rootNode)
                     if (detectedDomain != null) {
-                        val isBlocked = blockedWebsiteRepository.isWebsiteBlocked(detectedDomain)
-                        if (isBlocked) {
+                        var shouldBlockWeb = false
+                        if (isScheduleActive) {
+                            if (blockWebsitesSet.isNotEmpty()) {
+                                // Specific websites defined for active timetable block
+                                if (blockWebsitesSet.contains(detectedDomain)) {
+                                    shouldBlockWeb = true
+                                }
+                            } else {
+                                // If active timetable block has NO specific list, block global list
+                                if (blockedWebsiteRepository.isWebsiteBlocked(detectedDomain)) {
+                                    shouldBlockWeb = true
+                                }
+                            }
+                        } else if (isManualBlockingActive) {
+                            // Block global list
+                            if (blockedWebsiteRepository.isWebsiteBlocked(detectedDomain)) {
+                                shouldBlockWeb = true
+                            }
+                        }
+
+                        if (shouldBlockWeb) {
                             launchWebsiteBlockOverlay(detectedDomain)
                         }
                     }

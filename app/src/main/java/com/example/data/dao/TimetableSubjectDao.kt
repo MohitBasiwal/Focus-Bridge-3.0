@@ -9,6 +9,9 @@ interface TimetableSubjectDao {
     @Query("SELECT * FROM timetable_subjects ORDER BY startTime ASC")
     fun getAllSubjects(): Flow<List<TimetableSubjectEntity>>
 
+    @Query("SELECT * FROM timetable_subjects ORDER BY startTime ASC")
+    suspend fun getAllSubjectsSync(): List<TimetableSubjectEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSubject(subject: TimetableSubjectEntity)
 

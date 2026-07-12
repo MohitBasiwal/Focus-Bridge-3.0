@@ -25,6 +25,17 @@ class PreferenceManager @Inject constructor(
     private val dailyStudyGoalMinutesKey = intPreferencesKey("daily_study_goal_minutes")
     private val dailyUnlockLimitKey = intPreferencesKey("daily_unlock_limit")
     private val notificationEnabledKey = booleanPreferencesKey("notification_enabled")
+    private val isStrictBlockingEnabledKey = booleanPreferencesKey("is_strict_blocking_enabled")
+
+    val isStrictBlockingEnabled: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[isStrictBlockingEnabledKey] ?: false
+    }
+
+    suspend fun setStrictBlockingEnabled(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[isStrictBlockingEnabledKey] = enabled
+        }
+    }
 
     val isOnboardingCompleted: Flow<Boolean> = context.dataStore.data.map { preferences ->
         preferences[isOnboardingCompletedKey] ?: false

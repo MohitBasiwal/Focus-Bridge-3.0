@@ -27,7 +27,7 @@ import com.example.data.dao.SpeechChallengeHistoryDao
         BlockedEventEntity::class,
         SpeechChallengeHistoryEntity::class
     ],
-    version = 4, // Increment version for schema change
+    version = 5, // Increment version for schema change
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

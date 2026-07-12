@@ -31,7 +31,9 @@ class TimetableViewModel @Inject constructor(
         endTime: String,
         colorArgb: Int,
         category: String,
-        notes: String
+        notes: String,
+        blockedApps: String = "",
+        blockedWebsites: String = ""
     ) {
         viewModelScope.launch {
             val entity = TimetableSubjectEntity(
@@ -41,7 +43,9 @@ class TimetableViewModel @Inject constructor(
                 endTime = endTime,
                 colorArgb = colorArgb,
                 category = category,
-                notes = notes
+                notes = notes,
+                blockedApps = blockedApps,
+                blockedWebsites = blockedWebsites
             )
             repository.insertSubject(entity)
         }

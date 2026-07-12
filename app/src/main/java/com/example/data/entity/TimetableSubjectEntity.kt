@@ -12,5 +12,7 @@ data class TimetableSubjectEntity(
     val endTime: String,   // "HH:mm"
     val colorArgb: Int,    // Color integer
     val category: String = "Study",
-    val notes: String = ""
+    val notes: String = "",
+    val blockedApps: String = "",
+    val blockedWebsites: String = ""
 )

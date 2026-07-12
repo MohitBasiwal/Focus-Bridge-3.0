@@ -29,19 +29,48 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.platform.LocalContext
 import com.example.data.entity.TimetableSubjectEntity
 import com.example.ui.components.GlassCard
 import com.example.ui.components.GradientBackground
 import com.example.ui.viewmodel.TimetableViewModel
+import com.example.ui.viewmodel.AppBlockerViewModel
 import java.util.Calendar
 
 data class DayItem(val name: String, val fullName: String, val isToday: Boolean = false)
 
+fun formatTo12Hour(time24: String): String {
+    return try {
+        val parts = time24.split(":")
+        val h = parts[0].toInt()
+        val m = parts[1].toInt()
+        val suffix = if (h >= 12) "PM" else "AM"
+        val h12 = when {
+            h == 0 -> 12
+            h > 12 -> h - 12
+            else -> h
+        }
+        val mStr = m.toString().padStart(2, '0')
+        "$h12:$mStr $suffix"
+    } catch(e: Exception) {
+        time24
+    }
+}
+
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
 fun TimetableScreen(
-    viewModel: TimetableViewModel = hiltViewModel()
+    viewModel: TimetableViewModel = hiltViewModel(),
+    appBlockerViewModel: AppBlockerViewModel = hiltViewModel()
 ) {
+    val context = LocalContext.current
+    LaunchedEffect(Unit) {
+        appBlockerViewModel.loadInstalledApps(context)
+    }
+
+    val appsList by appBlockerViewModel.installedApps.collectAsStateWithLifecycle()
+    val dbWebsites by appBlockerViewModel.blockedWebsites.collectAsStateWithLifecycle()
+
     // Dynamic Mon-Sun Week slider data
     val days = remember {
         val currentDayOfWeek = Calendar.getInstance().get(Calendar.DAY_OF_WEEK)
@@ -62,9 +91,9 @@ fun TimetableScreen(
     // Collect subjects from ViewModel (Room Database)
     val allSubjects by viewModel.timetableSubjects.collectAsStateWithLifecycle()
 
-    // Filter subjects for selected day and they are automatically sorted by Room (Query ORDER BY startTime ASC)
+    // Filter subjects for selected day (check if subject dayOfWeek split contains selectedDay name)
     val filteredSubjects = remember(allSubjects, selectedDay) {
-        allSubjects.filter { it.dayOfWeek == selectedDay.name }
+        allSubjects.filter { it.dayOfWeek.split(",").contains(selectedDay.name) }
     }
 
     // Dialog state
@@ -75,10 +104,15 @@ fun TimetableScreen(
     var subjectName by remember { mutableStateOf("") }
     var startHour by remember { mutableStateOf("09") }
     var startMinute by remember { mutableStateOf("00") }
+    var startAmPm by remember { mutableStateOf("AM") }
     var endHour by remember { mutableStateOf("10") }
     var endMinute by remember { mutableStateOf("30") }
+    var endAmPm by remember { mutableStateOf("AM") }
     var category by remember { mutableStateOf("Study") }
     var notes by remember { mutableStateOf("") }
+    var selectedRepeatingDays by remember { mutableStateOf(setOf(selectedDay.name)) }
+    var selectedAppsForBlock by remember { mutableStateOf(setOf<String>()) }
+    var selectedWebsitesForBlock by remember { mutableStateOf(setOf<String>()) }
 
     val subjectColors = remember {
         listOf(
@@ -99,25 +133,44 @@ fun TimetableScreen(
             val subject = editingSubject
             if (subject != null) {
                 subjectName = subject.name
+                
+                // Parse 24-hour startTime to 12-hour parts
                 val startParts = subject.startTime.split(":")
-                startHour = startParts.getOrElse(0) { "09" }
+                val sH = startParts.getOrNull(0)?.toIntOrNull() ?: 9
+                startAmPm = if (sH >= 12) "PM" else "AM"
+                val sH12 = if (sH == 0) 12 else if (sH > 12) sH - 12 else sH
+                startHour = sH12.toString().padStart(2, '0')
                 startMinute = startParts.getOrElse(1) { "00" }
+
+                // Parse 24-hour endTime to 12-hour parts
                 val endParts = subject.endTime.split(":")
-                endHour = endParts.getOrElse(0) { "10" }
+                val eH = endParts.getOrNull(0)?.toIntOrNull() ?: 10
+                endAmPm = if (eH >= 12) "PM" else "AM"
+                val eH12 = if (eH == 0) 12 else if (eH > 12) eH - 12 else eH
+                endHour = eH12.toString().padStart(2, '0')
                 endMinute = endParts.getOrElse(1) { "30" }
+
                 category = subject.category
                 notes = subject.notes
                 selectedColor = Color(subject.colorArgb)
+                selectedRepeatingDays = subject.dayOfWeek.split(",").filter { it.isNotBlank() }.toSet()
+                selectedAppsForBlock = subject.blockedApps.split(",").filter { it.isNotBlank() }.toSet()
+                selectedWebsitesForBlock = subject.blockedWebsites.split(",").filter { it.isNotBlank() }.toSet()
             } else {
                 // Set default/empty fields for creation
                 subjectName = ""
                 startHour = "09"
                 startMinute = "00"
+                startAmPm = "AM"
                 endHour = "10"
                 endMinute = "30"
+                endAmPm = "AM"
                 category = "Study"
                 notes = ""
                 selectedColor = subjectColors[0]
+                selectedRepeatingDays = setOf(selectedDay.name)
+                selectedAppsForBlock = emptySet()
+                selectedWebsitesForBlock = emptySet()
             }
         }
     }
@@ -345,7 +398,7 @@ fun TimetableScreen(
                                                 )
                                             }
                                             Text(
-                                                text = "${subject.startTime} - ${subject.endTime}",
+                                                text = "${formatTo12Hour(subject.startTime)} - ${formatTo12Hour(subject.endTime)}",
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                                             )
@@ -357,6 +410,14 @@ fun TimetableScreen(
                                             style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold),
                                             color = MaterialTheme.colorScheme.onSurface
                                         )
+                                        
+                                        val daysJoined = subject.dayOfWeek.split(",").joinToString(", ")
+                                        Text(
+                                            text = "Days: $daysJoined",
+                                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                        )
+
                                         if (subject.notes.isNotEmpty()) {
                                             Spacer(modifier = Modifier.height(4.dp))
                                             Text(
@@ -373,7 +434,7 @@ fun TimetableScreen(
                                         modifier = Modifier.height(80.dp)
                                     ) {
                                         Text(
-                                            text = subject.startTime,
+                                            text = formatTo12Hour(subject.startTime),
                                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                                             color = MaterialTheme.colorScheme.onSurface
                                         )
@@ -435,7 +496,7 @@ fun TimetableScreen(
 
                             // Time Inputs
                             Text(
-                                text = "Duration & Timing",
+                                text = "Duration & Timing (12-Hour)",
                                 style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
                                 color = MaterialTheme.colorScheme.onSurface
                             )
@@ -445,24 +506,53 @@ fun TimetableScreen(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                // Start Time (HH:MM)
+                                // Start Time
                                 OutlinedTextField(
                                     value = startHour,
                                     onValueChange = { if (it.length <= 2 && it.all { char -> char.isDigit() }) startHour = it },
-                                    label = { Text("Start HH") },
+                                    label = { Text("Start Hour") },
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                    modifier = Modifier.weight(1f),
+                                    modifier = Modifier.weight(1.5f),
                                     shape = RoundedCornerShape(12.dp)
                                 )
                                 Text(":", fontWeight = FontWeight.Bold, fontSize = 20.sp)
                                 OutlinedTextField(
                                     value = startMinute,
                                     onValueChange = { if (it.length <= 2 && it.all { char -> char.isDigit() }) startMinute = it },
-                                    label = { Text("MM") },
+                                    label = { Text("Min") },
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                     modifier = Modifier.weight(1f),
                                     shape = RoundedCornerShape(12.dp)
                                 )
+                                
+                                // AM/PM Start Selector
+                                Row(
+                                    modifier = Modifier
+                                        .weight(1.5f)
+                                        .height(56.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(Color.White.copy(alpha = 0.08f)),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    listOf("AM", "PM").forEach { label ->
+                                        val isSel = startAmPm == label
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxHeight()
+                                                .weight(1f)
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(if (isSel) MaterialTheme.colorScheme.primary else Color.Transparent)
+                                                .clickable { startAmPm = label },
+                                            contentAlignment = Alignment.Center
+                                         ) {
+                                            Text(
+                                                text = label,
+                                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                                color = if (isSel) Color.White else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                            )
+                                        }
+                                    }
+                                }
                             }
 
                             Row(
@@ -470,24 +560,90 @@ fun TimetableScreen(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                // End Time (HH:MM)
+                                // End Time
                                 OutlinedTextField(
                                     value = endHour,
                                     onValueChange = { if (it.length <= 2 && it.all { char -> char.isDigit() }) endHour = it },
-                                    label = { Text("End HH") },
+                                    label = { Text("End Hour") },
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                    modifier = Modifier.weight(1f),
+                                    modifier = Modifier.weight(1.5f),
                                     shape = RoundedCornerShape(12.dp)
                                 )
                                 Text(":", fontWeight = FontWeight.Bold, fontSize = 20.sp)
                                 OutlinedTextField(
                                     value = endMinute,
                                     onValueChange = { if (it.length <= 2 && it.all { char -> char.isDigit() }) endMinute = it },
-                                    label = { Text("MM") },
+                                    label = { Text("Min") },
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                     modifier = Modifier.weight(1f),
                                     shape = RoundedCornerShape(12.dp)
                                 )
+
+                                // AM/PM End Selector
+                                Row(
+                                    modifier = Modifier
+                                        .weight(1.5f)
+                                        .height(56.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(Color.White.copy(alpha = 0.08f)),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    listOf("AM", "PM").forEach { label ->
+                                        val isSel = endAmPm == label
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxHeight()
+                                                .weight(1f)
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(if (isSel) MaterialTheme.colorScheme.primary else Color.Transparent)
+                                                .clickable { endAmPm = label },
+                                            contentAlignment = Alignment.Center
+                                         ) {
+                                            Text(
+                                                text = label,
+                                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                                color = if (isSel) Color.White else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Repeating Days
+                            Text(
+                                text = "Select Repeating Weekdays",
+                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                val daysOfWeekList = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+                                daysOfWeekList.forEach { dayName ->
+                                     val isDaySelected = selectedRepeatingDays.contains(dayName)
+                                     Box(
+                                         modifier = Modifier
+                                             .size(38.dp)
+                                             .clip(CircleShape)
+                                             .background(if (isDaySelected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.08f))
+                                             .clickable {
+                                                 selectedRepeatingDays = if (isDaySelected) {
+                                                     if (selectedRepeatingDays.size > 1) selectedRepeatingDays - dayName else selectedRepeatingDays
+                                                 } else {
+                                                     selectedRepeatingDays + dayName
+                                                 }
+                                             },
+                                         contentAlignment = Alignment.Center
+                                     ) {
+                                         Text(
+                                             text = dayName.take(1),
+                                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                             color = if (isDaySelected) Color.White else MaterialTheme.colorScheme.onSurface
+                                         )
+                                     }
+                                }
                             }
 
                             // Choose Category
@@ -577,6 +733,154 @@ fun TimetableScreen(
                                 }
                             }
 
+                            // Blocked Apps Expandable Section
+                            var showAppsExpanded by remember { mutableStateOf(false) }
+                            var appsSearchQuery by remember { mutableStateOf("") }
+                            val filteredApps = remember(appsList, appsSearchQuery) {
+                                if (appsSearchQuery.isBlank()) appsList else appsList.filter { it.appName.contains(appsSearchQuery, ignoreCase = true) }
+                            }
+                            
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { showAppsExpanded = !showAppsExpanded }
+                                        .padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "🤖 Apps to Block (${selectedAppsForBlock.size} selected)",
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Icon(
+                                        imageVector = if (showAppsExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                        contentDescription = "Expand Apps",
+                                        tint = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                                
+                                if (showAppsExpanded) {
+                                    OutlinedTextField(
+                                        value = appsSearchQuery,
+                                        onValueChange = { appsSearchQuery = it },
+                                        label = { Text("Search Installed Apps") },
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                    Box(modifier = Modifier.height(140.dp).fillMaxWidth().verticalScroll(rememberScrollState())) {
+                                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            filteredApps.forEach { app ->
+                                                val isAppSel = selectedAppsForBlock.contains(app.packageName)
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .clickable {
+                                                            selectedAppsForBlock = if (isAppSel) {
+                                                                selectedAppsForBlock - app.packageName
+                                                            } else {
+                                                                selectedAppsForBlock + app.packageName
+                                                            }
+                                                        }
+                                                        .padding(vertical = 4.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Checkbox(
+                                                        checked = isAppSel,
+                                                        onCheckedChange = {
+                                                            selectedAppsForBlock = if (isAppSel) {
+                                                                selectedAppsForBlock - app.packageName
+                                                            } else {
+                                                                selectedAppsForBlock + app.packageName
+                                                            }
+                                                        }
+                                                    )
+                                                    Text(
+                                                        text = app.appName,
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        color = MaterialTheme.colorScheme.onSurface,
+                                                        modifier = Modifier.padding(start = 8.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Blocked Websites Expandable Section
+                            var showWebsitesExpanded by remember { mutableStateOf(false) }
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { showWebsitesExpanded = !showWebsitesExpanded }
+                                        .padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "🌐 Websites to Block (${selectedWebsitesForBlock.size} selected)",
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Icon(
+                                        imageVector = if (showWebsitesExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                        contentDescription = "Expand Websites",
+                                        tint = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                                
+                                if (showWebsitesExpanded) {
+                                    Box(modifier = Modifier.height(110.dp).fillMaxWidth().verticalScroll(rememberScrollState())) {
+                                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            dbWebsites.forEach { website ->
+                                                val isWebSel = selectedWebsitesForBlock.contains(website.domain)
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .clickable {
+                                                            selectedWebsitesForBlock = if (isWebSel) {
+                                                                selectedWebsitesForBlock - website.domain
+                                                            } else {
+                                                                selectedWebsitesForBlock + website.domain
+                                                            }
+                                                        }
+                                                        .padding(vertical = 4.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                 ) {
+                                                    Checkbox(
+                                                        checked = isWebSel,
+                                                        onCheckedChange = {
+                                                            selectedWebsitesForBlock = if (isWebSel) {
+                                                                selectedWebsitesForBlock - website.domain
+                                                            } else {
+                                                                selectedWebsitesForBlock + website.domain
+                                                            }
+                                                        }
+                                                    )
+                                                    Text(
+                                                        text = website.domain,
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        color = MaterialTheme.colorScheme.onSurface,
+                                                        modifier = Modifier.padding(start = 8.dp)
+                                                    )
+                                                }
+                                            }
+                                            if (dbWebsites.isEmpty()) {
+                                                Text(
+                                                    text = "No websites configured in Website Blocker.",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                                    modifier = Modifier.padding(8.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
                             // Notes input
                             OutlinedTextField(
                                 value = notes,
@@ -604,39 +908,52 @@ fun TimetableScreen(
                                 Button(
                                     onClick = {
                                         if (subjectName.isNotBlank()) {
-                                            // Validate Hours and Minutes
-                                            val validStartHour = (startHour.toIntOrNull() ?: 9).coerceIn(0, 23)
-                                            val validStartMin = (startMinute.toIntOrNull() ?: 0).coerceIn(0, 59)
-                                            val validEndHour = (endHour.toIntOrNull() ?: 10).coerceIn(0, 23)
-                                            val validEndMin = (endMinute.toIntOrNull() ?: 30).coerceIn(0, 59)
+                                            val to24Hour = { hourStr: String, minuteStr: String, amPm: String ->
+                                                val h12 = hourStr.toIntOrNull() ?: 9
+                                                val m = minuteStr.toIntOrNull() ?: 0
+                                                val h24 = when (amPm) {
+                                                    "PM" -> if (h12 < 12) h12 + 12 else 12
+                                                    "AM" -> if (h12 == 12) 0 else h12
+                                                    else -> h12
+                                                }.coerceIn(0, 23)
+                                                "${h24.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}"
+                                            }
 
-                                            val formattedStart = "${validStartHour.toString().padStart(2, '0')}:${validStartMin.toString().padStart(2, '0')}"
-                                            val formattedEnd = "${validEndHour.toString().padStart(2, '0')}:${validEndMin.toString().padStart(2, '0')}"
+                                            val formattedStart = to24Hour(startHour, startMinute, startAmPm)
+                                            val formattedEnd = to24Hour(endHour, endMinute, endAmPm)
+                                            val repeatingDaysCsv = selectedRepeatingDays.joinToString(",")
+                                            val blockedAppsCsv = selectedAppsForBlock.joinToString(",")
+                                            val blockedWebsitesCsv = selectedWebsitesForBlock.joinToString(",")
 
                                             val subject = editingSubject
                                             if (subject != null) {
-                                                // Edit Mode
-                                                viewModel.updateSubject(
-                                                    subject.copy(
-                                                        name = subjectName,
-                                                        startTime = formattedStart,
-                                                        endTime = formattedEnd,
-                                                        colorArgb = selectedColor.toArgb(),
-                                                        category = category,
-                                                        notes = notes
-                                                    )
-                                                )
+                                                 // Edit Mode
+                                                 viewModel.updateSubject(
+                                                     subject.copy(
+                                                         name = subjectName,
+                                                         startTime = formattedStart,
+                                                         endTime = formattedEnd,
+                                                         colorArgb = selectedColor.toArgb(),
+                                                         category = category,
+                                                         notes = notes,
+                                                         dayOfWeek = repeatingDaysCsv,
+                                                         blockedApps = blockedAppsCsv,
+                                                         blockedWebsites = blockedWebsitesCsv
+                                                     )
+                                                 )
                                             } else {
-                                                // Add Mode
-                                                viewModel.addSubject(
-                                                    name = subjectName,
-                                                    dayOfWeek = selectedDay.name,
-                                                    startTime = formattedStart,
-                                                    endTime = formattedEnd,
-                                                    colorArgb = selectedColor.toArgb(),
-                                                    category = category,
-                                                    notes = notes
-                                                )
+                                                 // Add Mode
+                                                 viewModel.addSubject(
+                                                     name = subjectName,
+                                                     dayOfWeek = repeatingDaysCsv,
+                                                     startTime = formattedStart,
+                                                     endTime = formattedEnd,
+                                                     colorArgb = selectedColor.toArgb(),
+                                                     category = category,
+                                                     notes = notes,
+                                                     blockedApps = blockedAppsCsv,
+                                                     blockedWebsites = blockedWebsitesCsv
+                                                 )
                                             }
                                             showDialog = false
                                         }
